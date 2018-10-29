@@ -43,9 +43,9 @@ private fun handleConnection(socket: Socket, startCmd: String) {
 
     val localOsName = System.getProperty("os.name")
     val localOs = when {
-        localOsName.contains("nux") -> LINUX
-        localOsName.contains("win") -> WINDOWS
-        localOsName.contains("mac") || localOsName.contains("darwin") -> MAC
+        localOsName.contains("nux", true) -> LINUX
+        localOsName.contains("win", true) -> WINDOWS
+        localOsName.contains("mac", true) || localOsName.contains("darwin", true) -> MAC
         else -> LINUX
     }
 
