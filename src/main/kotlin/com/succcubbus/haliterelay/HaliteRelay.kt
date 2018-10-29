@@ -1,5 +1,9 @@
 package com.succcubbus.haliterelay
 
+import com.succcubbus.haliterelay.OS.LINUX
+import com.succcubbus.haliterelay.OS.MAC
+import com.succcubbus.haliterelay.OS.WINDOWS
+import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
@@ -23,16 +27,32 @@ fun main(args: Array<String>) {
     }
 }
 
+enum class OS {
+    LINUX,
+    WINDOWS,
+    MAC
+}
+
 private fun handleConnection(socket: Socket, startCmd: String) {
     println()
     println("accepted connection from ${socket.remoteSocketAddress} at ${now().format(ISO_DATE_TIME)}")
 
     val process = Runtime.getRuntime().exec(startCmd)
 
+    var remoteOs = LINUX
+
+    val localOsName = System.getProperty("os.name")
+    val localOs = when {
+        localOsName.contains("nux") -> LINUX
+        localOsName.contains("win") -> WINDOWS
+        localOsName.contains("mac") || localOsName.contains("darwin") -> MAC
+        else -> LINUX
+    }
+
     thread {
         val oStream = socket.getOutputStream()
         generateSequence { process.inputStream.read().takeIf { it != -1 } }
-            .forEach { oStream.write(it) }
+            .forEach { translateEndings(localOs, remoteOs, it, oStream) }
 
         val exitStatus = process.waitFor()
         println("bot stopped with status $exitStatus")
@@ -43,11 +63,9 @@ private fun handleConnection(socket: Socket, startCmd: String) {
         try {
             generateSequence { socket.getInputStream().read().takeIf { it != -1 } }
                 .forEach {
-                    process.outputStream.write(it)
+                    remoteOs = detectOs(it, remoteOs)
 
-                    if (it == '\n'.toInt()) {
-                        process.outputStream.flush()
-                    }
+                    translateEndings(remoteOs, localOs, it, process.outputStream)
                 }
         } catch (ignored: SocketException) {
         } catch (ignored: SocketTimeoutException) {
@@ -55,5 +73,35 @@ private fun handleConnection(socket: Socket, startCmd: String) {
         }
         println("closed connection from ${socket.remoteSocketAddress} at ${now().format(ISO_DATE_TIME)}")
         process.destroy()
+    }
+}
+
+private fun detectOs(it: Int, remoteOs: OS): OS {
+    return when {
+        it == '\r'.toInt() && remoteOs == LINUX -> MAC
+        it == '\n'.toInt() && remoteOs == MAC -> WINDOWS
+        else -> remoteOs
+    }
+}
+
+private fun translateEndings(from: OS, to: OS, msg: Int, output: OutputStream) {
+    when {
+        from == WINDOWS && msg == '\r'.toInt() -> {}
+
+        from == WINDOWS && msg == '\n'.toInt() ||
+        from == LINUX && msg == '\n'.toInt() ||
+        from == MAC && msg == '\r'.toInt() -> {
+            when (to) {
+                WINDOWS -> {
+                    output.write('\r'.toInt())
+                    output.write('\n'.toInt())
+                }
+                LINUX -> output.write('\n'.toInt())
+                MAC -> output.write('\r'.toInt())
+            }
+            output.flush()
+        }
+
+        else -> output.write(msg)
     }
 }
